@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+
+POSIXLY_CORRECT=yes
+
+# DECLARATE VARIABLES FOR SCRIPT ARGUMENTS
+DIR=$(pwd)			# Directory for working (pwd as dafault)
+FILE_ERE=''			# Regex for ignored files
+ND=0				# Number of directories
+NF=0				# Number of files
+FILE_SIZE_TMP=0			# Мariable for temporary file size storage
+NORM_OUT=false			# Setting normalization for output
+
+
+# ARRAY OF NUMBERS OF FILES IN SIZE CATEGORIES
+declare -A FILE_SIZE=(
+	[lt100B]=0
+	[lt1KiB]=0
+	[lt10KiB]=0
+	[lt100KiB]=0
+	[lt1MiB]=0
+	[lt10MiB]=0
+	[lt100MiB]=0
+	[lt1GiB]=0
+	[gqGiB]=0
+)
+
+
+# PROCESSING ARGUMENTS
+while getopts i:n arg
+do	case "$arg" in
+	i) 	FILE_ERE="$OPTARG"
+	   	;;
+	n)	NORM_OUT=true
+		;;
+	*)	echo " Incorrect arguments" >&2
+		exit 1
+		;;
+	esac
+done	
+#OPTIND=$((OPTIND + 1))
+#(I(OPTIND--))
+#shift $OPTIND
+shift $((OPTIND-1))
+
+# ERROR CHECK IN ARGUMETS
+if [ $# -eq 1 ]
+	then DIR=$1
+
+elif [ $# -ge 1 ]
+	then echo " Wrong number of arguments"
+fi
+
+if [ ! -d "$DIR" ] # If it is directory
+	then echo " The directory does not exist"
+	exit 1
+fi
+
+
+if [ "$FILE_ERE" ]
+	then printf "%s" "$PWD" | grep -qE "$FILE_ERE" && echo " FILE_ERE $FILE_ERE cannot cover the root directory" && exit 1 
+fi
+
+
+# GETTING SIZES OF FILES IN DIR
+for file in $(find ${DIR}); do
+	
+	if [ "$FILE_ERE" ]
+		then printf "%s" "${file}" | grep -Eq "$FILE_ERE" && continue
+	fi
+
+	#Increment directories counter if its directory
+	if [  -d "${file}" ]
+		then	(( ND++ ))
+		continue
+	fi
+	
+	#getting size if its file
+	if [  -f "${file}" ]
+		then	FILE_SIZE_TMP=$(wc -c "${file}" | awk '{print $1}')
+			(( NF++ ))
+	fi	
+
+	#testing size and assign to appropriate cell
+	if [ "$FILE_SIZE_TMP" -lt 100 ]
+		then	(( FILE_SIZE[lt100B]++ ))
+	
+	elif [ "$FILE_SIZE_TMP" -lt 1024 ]
+		then 	(( FILE_SIZE[lt1KiB]++ ))
+	
+	elif [ "$FILE_SIZE_TMP" -lt 10240 ]
+		then	(( FILE_SIZE[lt10KiB]++ ))
+	
+	elif [ "$FILE_SIZE_TMP" -lt 102400 ]
+		then	(( FILE_SIZE[lt100KiB]++ ))
+	
+	elif [ "$FILE_SIZE_TMP" -lt 1048576 ]
+		then	(( FILE_SIZE[lt1MiB]++ ))
+	
+	elif [ "$FILE_SIZE_TMP" -lt 10485760 ]
+		then	(( FILE_SIZE[lt10MiB]++ ))
+	
+	elif [ "$FILE_SIZE_TMP" -lt 104857600 ]
+		then	(( FILE_SIZE[lt100MiB]++ ))
+	
+	elif [ "$FILE_SIZE_TMP" -lt 1073741824 ]
+		then	(( FILE_SIZE[lt1GiB]++ ))
+	
+	elif [ "$FILE_SIZE_TMP" -ge 1073741824 ]
+		then	(( FILE_SIZE[gq1GiB]++ ))
+
+	fi
+done
+
+
+# NORMALIZATION
+if $NORM_OUT
+	
+	# Check the presence of the terminal using the utility test
+	then if [ -t 0 ]
+		then MAX_LENTH=$(( $(tput cols) - 12 ))
+		else 
+		     MAX_LENTH=67 # 79 - 12. 10 characters of category name
+	fi
+	
+	# Getting max value in array FILE_SIZE
+	MAX_VAL=0
+	for i in "${!FILE_SIZE[@]}"; do
+		if [ "${FILE_SIZE[$i]}" -gt $MAX_VAL ]
+			then MAX_VAL=${FILE_SIZE[$i]}
+		fi
+	done
+	
+	# Changing values of array FILE_SIZE if its necessary
+	if [ "$MAX_VAL" -gt $MAX_LENTH ]
+		then coef=`expr \( "$MAX_VAL" + \( "$MAX_LENTH" - 1 \) \) / "$MAX_LENTH"`
+		for i in "${!FILE_SIZE[@]}"; do
+			if [ "${FILE_SIZE[$i]}" -gt 0 ]
+				then FILE_SIZE[$i]=`expr "${FILE_SIZE[$i]}" / "$coef"`
+			fi
+		done
+	fi
+fi
+
+
+# OUTPUT
+
+echo "Root directory: $DIR"
+echo "Directories: $ND"
+echo "All files: $NF"
+echo "File size histogram:"
+
+echo -n "  <100 B  : "; if [ "${FILE_SIZE[lt100B]}" -gt 0 ]; 
+	then eval printf '\#%.0s' {1.."${FILE_SIZE[lt100B]}"}
+	fi ; printf '\n'
+
+echo -n "  <1 KiB  : "; if [ "${FILE_SIZE[lt1KiB]}" -gt 0 ]; 
+	then eval printf '\#%.0s' {1.."${FILE_SIZE[lt1KiB]}"}
+	fi ; printf '\n'
+
+echo -n "  <10 KiB : "; if [ "${FILE_SIZE[lt10KiB]}" -gt 0 ]; 
+	then eval printf '\#%.0s' {1.."${FILE_SIZE[lt10KiB]}"}
+	fi ; printf '\n'
+
+echo -n "  <100 KiB: "; if [ "${FILE_SIZE[lt100KiB]}" -gt 0 ]; 
+	then eval printf '\#%.0s' {1.."${FILE_SIZE[lt100KiB]}"}
+	fi ; printf '\n'
+
+echo -n "  <1 MiB  : "; if [ "${FILE_SIZE[lt1MiB]}" -gt 0 ]; 
+	then eval printf '\#%.0s' {1.."${FILE_SIZE[lt1MiB]}"}
+	fi ; printf '\n'
+
+echo -n "  <10 MiB : "; if [ "${FILE_SIZE[lt10MiB]}" -gt 0 ]; 
+	then eval printf '\#%.0s' {1.."${FILE_SIZE[lt10MiB]}"}
+	fi ; printf '\n'
+
+echo -n "  <100 MiB: "; if [ "${FILE_SIZE[lt100MiB]}" -gt 0 ]; 
+	then eval printf '\#%.0s' {1.."${FILE_SIZE[lt100MiB]}"} 
+	fi ; printf '\n'
+
+echo -n "  <1 GiB  : "; if [ "${FILE_SIZE[lt1GiB]}" -gt 0 ]; 
+	then eval printf '\#%.0s' {1.."${FILE_SIZE[lt1GiB]}"}
+	fi ; printf '\n'
+
+echo -n "  >=1 GiB : "; if [ "${FILE_SIZE[lt1GiB]}" -gt 0 ]; 
+	then eval printf '\#%.0s' {1.."${FILE_SIZE[lt1GiB]}"}
+	fi ; printf '\n'
